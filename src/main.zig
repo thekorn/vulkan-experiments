@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("c.zig");
 const buildin = @import("builtin");
+const bla = @import("bla");
 
 fn getLibrary() !std.DynLib {
     return switch (buildin.os.tag) {

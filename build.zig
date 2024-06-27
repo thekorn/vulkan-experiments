@@ -37,7 +37,18 @@ pub fn build(b: *std.Build) void {
     });
     // exe.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
-    //   b.addTranslateC(options: Step.TranslateC.Options)
+    const cApi = b.addTranslateC(.{
+        .root_source_file = b.path("src/cimports.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    cApi.addIncludeDir("/usr/local/include");
+
+    const cApi_module = cApi.createModule();
+    exe.root_module.addImport("bla", cApi_module);
+
+    //exe.step.dependOn(&cApi.step);
+    //std.debug.print(">>> CAPI {any}", .{cApi.output_file.getPath()});
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
