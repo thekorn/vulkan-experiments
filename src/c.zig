@@ -40805,8 +40805,15 @@ pub const __ARM_FEATURE_UNALIGNED = @as(c_int, 1);
 pub const __ARM_FEATURE_FP16_VECTOR_ARITHMETIC = @as(c_int, 1);
 pub const __ARM_FEATURE_FP16_SCALAR_ARITHMETIC = @as(c_int, 1);
 pub const __ARM_FEATURE_DOTPROD = @as(c_int, 1);
+pub const __ARM_FEATURE_MATMUL_INT8 = @as(c_int, 1);
 pub const __ARM_FEATURE_ATOMICS = @as(c_int, 1);
+pub const __ARM_FEATURE_BF16 = @as(c_int, 1);
+pub const __ARM_FEATURE_BF16_VECTOR_ARITHMETIC = @as(c_int, 1);
+pub const __ARM_BF16_FORMAT_ALTERNATIVE = @as(c_int, 1);
+pub const __ARM_FEATURE_BF16_SCALAR_ARITHMETIC = @as(c_int, 1);
 pub const __ARM_FEATURE_FP16_FML = @as(c_int, 1);
+pub const __ARM_FEATURE_FRINT = @as(c_int, 1);
+pub const __ARM_FEATURE_BTI = @as(c_int, 1);
 pub const __ARM_FEATURE_COMPLEX = @as(c_int, 1);
 pub const __ARM_FEATURE_JCVT = @as(c_int, 1);
 pub const __ARM_FEATURE_QRDMX = @as(c_int, 1);
@@ -40827,7 +40834,7 @@ pub const __APPLE_CC__ = @as(c_int, 6000);
 pub const __APPLE__ = @as(c_int, 1);
 pub const __STDC_NO_THREADS__ = @as(c_int, 1);
 pub const __weak = @compileError("unable to translate macro: undefined identifier `objc_gc`");
-// (no file):431:9
+// (no file):438:9
 pub const __strong = "";
 pub const __unsafe_unretained = "";
 pub const __DYNAMIC__ = @as(c_int, 1);

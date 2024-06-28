@@ -42,10 +42,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    // exe.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
+    exe.linkSystemLibrary("glfw");
     exe.step.dependOn(cImports_step);
 
     // This declares intent for the executable to be installed into the
