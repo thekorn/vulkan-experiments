@@ -2,12 +2,17 @@
 
 ## running
 
-Run the application
+Easiest ist to spawn the nix shell, which includes all dependencies.
+```bash
+nix-shell
+```
+
+within the shell, run the application
 ```bash
 zig build run
 ```
 
-Run the application and debug print the vulkan api calls
+or, alternativly, run the application and debug print the vulkan api calls
 ```bash
 VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_api_dump zig build run
 ```

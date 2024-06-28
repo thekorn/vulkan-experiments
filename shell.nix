@@ -11,10 +11,14 @@ pkgs.mkShell {
         SDL2
         SDL2.dev
         glfw
+        vulkan-tools
+        vulkan-headers
+        vulkan-loader
     ];
   nativeBuildInputs = with pkgs; [
     unstable.zig_0_13
     unstable.zls
   ];
   PKG_CONFIG_PATH = "${SDL2.dev}/lib/pkgconfig:${glfw}/lib/pkgconfig";
+  NIX_SHELL_CFLAGS = "-isystem ${vulkan-headers}/include";
 }
