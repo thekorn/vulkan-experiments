@@ -108,10 +108,60 @@ const Vulkan = struct {
     }
 };
 
+const Window = struct {
+    const Self = @This();
+    instance: *c.GLFWwindow,
+
+    fn init() !Self {
+        if (c.glfwInit() == 0) return error.GlfwInitFailed;
+
+        c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
+        c.glfwWindowHint(c.GLFW_RESIZABLE, c.GLFW_FALSE);
+
+        const window = c.glfwCreateWindow(800, 600, "Vulkan", null, null) orelse return error.GlfwCreateWindowFailed;
+        return .{ .instance = window };
+    }
+
+    fn deinit(self: *Self) void {
+        c.glfwDestroyWindow(self.instance);
+        c.glfwTerminate();
+    }
+
+    fn should_close(self: *Self) bool {
+        return c.glfwWindowShouldClose(self.instance) != 0;
+    }
+};
+
+const Loop = struct {
+    const Self = @This();
+    window: *Window,
+
+    fn init(window: *Window) !Self {
+        return .{ .window = window };
+    }
+
+    fn deinit(self: *Self) void {
+        _ = self;
+    }
+
+    fn run(self: *Self) void {
+        while (!self.window.should_close()) {
+            c.glfwPollEvents();
+        }
+    }
+};
+
 pub fn main() !void {
     var entry = try Entry.init();
     defer entry.deinit();
 
     var vulkan = try Vulkan.init(entry);
     defer vulkan.deinit();
+
+    var window = try Window.init();
+    defer window.deinit();
+
+    var loop = try Loop.init(&window);
+    defer loop.deinit();
+    loop.run();
 }
