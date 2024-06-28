@@ -42,7 +42,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    // exe.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
+    exe.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
