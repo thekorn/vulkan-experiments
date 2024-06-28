@@ -37,6 +37,7 @@ pub fn build(b: *std.Build) void {
     });
     // exe.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
+    exe.linkLibC();
     //   b.addTranslateC(options: Step.TranslateC.Options)
 
     // This declares intent for the executable to be installed into the
