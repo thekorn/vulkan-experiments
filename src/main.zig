@@ -46,10 +46,11 @@ const Vulkan = struct {
     destroy_instance: PFN_vkDestroyInstance,
     allocation_callbacks: ?*c.VkAllocationCallbacks,
 
-    fn init(entry: Entry, allocation_callbacks: ?*c.VkAllocationCallbacks) !Self {
+    fn init(entry: Entry) !Self {
         const info = c.VkInstanceCreateInfo{ .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
         const create_instance: PFN_vkCreateInstance = @ptrCast(entry.get_instance_proc_addr(null, "vkCreateInstance"));
         var instance: c.VkInstance = undefined;
+        const allocation_callbacks: ?*c.VkAllocationCallbacks = null;
         switch (create_instance(&info, allocation_callbacks, &instance)) {
             c.VK_SUCCESS => {},
             c.VK_ERROR_OUT_OF_HOST_MEMORY => return error.OutOfHostMemory,
@@ -79,6 +80,6 @@ pub fn main() !void {
     var entry = try Entry.init();
     defer entry.deinit();
 
-    var vulkan = try Vulkan.init(entry, null);
+    var vulkan = try Vulkan.init(entry);
     defer vulkan.deinit();
 }
