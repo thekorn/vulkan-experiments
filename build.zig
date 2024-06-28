@@ -1,5 +1,10 @@
 const std = @import("std");
 
+fn translateCImports(b: *std.Build) !*std.Build.Step {
+    const tool_run = b.addSystemCommand(&.{"./translate_cimports.sh"});
+    return &tool_run.step;
+}
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -14,6 +19,8 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+
+    const cImports_step = try translateCImports(b);
 
     const lib = b.addStaticLibrary(.{
         .name = "vulkan-experiments",
@@ -38,7 +45,7 @@ pub fn build(b: *std.Build) void {
     // exe.addSystemIncludePath(.{ .cwd_relative = "/usr/local/include" });
     exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
     exe.linkLibC();
-    //   b.addTranslateC(options: Step.TranslateC.Options)
+    exe.step.dependOn(cImports_step);
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
