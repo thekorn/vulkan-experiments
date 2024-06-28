@@ -42,7 +42,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    //exe.addLibraryPath(.{ .cwd_relative = "/usr/local/lib" });
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("glfw");
