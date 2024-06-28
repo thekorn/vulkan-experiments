@@ -7,10 +7,14 @@ let
     { config = config; };
 in
 pkgs.mkShell {
+    buildInputs = with pkgs; [
+        SDL2
+        SDL2.dev
+        glfw
+    ];
   nativeBuildInputs = with pkgs; [
     unstable.zig_0_13
     unstable.zls
-    SDL2
-    glfw
   ];
+  PKG_CONFIG_PATH = "${SDL2.dev}/lib/pkgconfig:${glfw}/lib/pkgconfig";
 }
