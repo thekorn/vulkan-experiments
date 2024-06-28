@@ -2,9 +2,17 @@ const std = @import("std");
 const c = @import("c.zig");
 const buildin = @import("builtin");
 
-const PFN_vkGetInstanceProcAddr = std.meta.Child(c.PFN_vkGetInstanceProcAddr);
-const PFN_vkCreateInstance = std.meta.Child(c.PFN_vkCreateInstance);
-const PFN_vkDestroyInstance = std.meta.Child(c.PFN_vkDestroyInstance);
+fn GetFunctionPointer(comptime name: []const u8) type {
+    return std.meta.Child(@field(c, "PFN_" ++ name));
+}
+
+fn lookup(library: *std.DynLib, comptime name: [:0]const u8) !GetFunctionPointer(name) {
+    return library.lookup(GetFunctionPointer(name), name) orelse error.SymbolNotFound;
+}
+
+fn load(comptime name: []const u8, proc_addr: anytype, handle: anytype) GetFunctionPointer(name) {
+    return @ptrCast(proc_addr(handle, name.ptr));
+}
 
 fn getExtensionNames() []const [*:0]const u8 {
     return switch (buildin.os.tag) {
@@ -18,7 +26,7 @@ fn getExtensionNames() []const [*:0]const u8 {
     };
 }
 
-fn getLibrary() !std.DynLib {
+fn loadLibrary() !std.DynLib {
     // logic taken from `volk` library (https://github.com/zeux/volk)
     return switch (buildin.os.tag) {
         .windows => std.DynLib.open("vulkan-1.dll"),
@@ -41,13 +49,13 @@ fn getLibrary() !std.DynLib {
 const Entry = struct {
     const Self = @This();
     handle: std.DynLib,
-    get_instance_proc_addr: PFN_vkGetInstanceProcAddr,
+    get_instance_proc_addr: GetFunctionPointer("vkGetInstanceProcAddr"),
 
     fn init() !Self {
-        var library = try getLibrary();
+        var library = try loadLibrary();
         return .{
             .handle = library,
-            .get_instance_proc_addr = library.lookup(PFN_vkGetInstanceProcAddr, "vkGetInstanceProcAddr").?,
+            .get_instance_proc_addr = try lookup(&library, "vkGetInstanceProcAddr"),
         };
     }
 
@@ -60,7 +68,7 @@ const Vulkan = struct {
     const Self = @This();
     entry: Entry,
     instance: c.VkInstance,
-    destroy_instance: PFN_vkDestroyInstance,
+    destroy_instance: GetFunctionPointer("vkDestroyInstance"),
     allocation_callbacks: ?*c.VkAllocationCallbacks,
 
     fn init(entry: Entry) !Self {
@@ -72,7 +80,7 @@ const Vulkan = struct {
             .enabledExtensionCount = @intCast(extensions.len),
             .ppEnabledExtensionNames = extensions.ptr,
         };
-        const create_instance: PFN_vkCreateInstance = @ptrCast(entry.get_instance_proc_addr(null, "vkCreateInstance"));
+        const create_instance = load("vkCreateInstance", entry.get_instance_proc_addr, null);
         var instance: c.VkInstance = undefined;
         const allocation_callbacks: ?*c.VkAllocationCallbacks = null;
         switch (create_instance(&info, allocation_callbacks, &instance)) {
@@ -86,7 +94,7 @@ const Vulkan = struct {
             else => unreachable,
         }
 
-        const destroy_instance: PFN_vkDestroyInstance = @ptrCast(entry.get_instance_proc_addr(instance, "vkDestroyInstance"));
+        const destroy_instance = load("vkDestroyInstance", entry.get_instance_proc_addr, instance);
         return .{
             .entry = entry,
             .instance = instance,
