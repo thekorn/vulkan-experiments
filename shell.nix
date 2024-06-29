@@ -21,4 +21,5 @@ pkgs.mkShell {
   ];
   PKG_CONFIG_PATH = "${SDL2.dev}/lib/pkgconfig:${glfw}/lib/pkgconfig";
   NIX_SHELL_CFLAGS = "-isystem ${vulkan-headers}/include";
+  MVK_CONFIG_LOG_LEVEL= "2";
 }
