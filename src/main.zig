@@ -21,11 +21,10 @@ fn getExtensionNames(allocator: *std.mem.Allocator) ![][*]const u8 {
     var extensions = std.ArrayList([*]const u8).init(allocator.*);
     errdefer extensions.deinit();
 
-    std.debug.print(">> GLFW extensions: {}\n", .{glfwExtensionCount});
-    if (glfwExtensionCount > 0) {
-        for (glfwExtensions[0..glfwExtensionCount]) |ext| {
-            try extensions.append(ext);
-        }
+    // if this is NULLm the vvulklan is likely init before glfw - change order
+    std.debug.assert(glfwExtensionCount > 0);
+    for (glfwExtensions[0..glfwExtensionCount]) |ext| {
+        try extensions.append(ext);
     }
 
     const extra_extensions = switch (buildin.os.tag) {
