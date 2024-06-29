@@ -144,10 +144,8 @@ const Loop = struct {
         _ = self;
     }
 
-    fn run(self: *Self) void {
-        while (!self.window.should_close()) {
-            c.glfwPollEvents();
-        }
+    fn is_running(self: *Self) bool {
+        return !self.window.should_close();
     }
 };
 
@@ -163,5 +161,8 @@ pub fn main() !void {
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
-    loop.run();
+
+    while (loop.is_running()) {
+        c.glfwPollEvents();
+    }
 }
