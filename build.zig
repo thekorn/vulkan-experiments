@@ -9,6 +9,7 @@ fn translateCImports(b: *std.Build) !*std.Build.Step {
 // declaratively construct a build graph that will be executed by an external
 // runner.
 pub fn build(b: *std.Build) void {
+    const generate_bindings = b.option(bool, "generate-bindings", "(Re-) generate C bindings") orelse false;
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
     // means any target is allowed, and the default is native. Other options
@@ -19,8 +20,6 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
-
-    const cImports_step = try translateCImports(b);
 
     const lib = b.addStaticLibrary(.{
         .name = "vulkan-experiments",
@@ -45,7 +44,11 @@ pub fn build(b: *std.Build) void {
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("glfw");
-    exe.step.dependOn(cImports_step);
+
+    if (generate_bindings) {
+        const cImports_step = try translateCImports(b);
+        exe.step.dependOn(cImports_step);
+    }
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default

@@ -23,8 +23,17 @@ VK_INSTANCE_LAYERS=VK_LAYER_LUNARG_api_dump zig build run
 Alternatively, use `vkconfig` for more fine grained layers config.
 
 More verbose moltenVK logging
+
 ```bash
 MVK_CONFIG_LOG_LEVEL=2 zig build run
+```
+
+## code generations
+
+In order to (re-)generate the c bindings, run
+
+```bash
+zig build -Dgenerate-bindings
 ```
 
 ## ressources
