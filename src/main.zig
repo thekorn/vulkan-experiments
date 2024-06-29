@@ -14,16 +14,33 @@ fn load(comptime name: []const u8, proc_addr: anytype, handle: anytype) GetFunct
     return @ptrCast(proc_addr(handle, name.ptr));
 }
 
-fn getExtensionNames() []const [*:0]const u8 {
-    return switch (buildin.os.tag) {
+fn getExtensionNames(allocator: *std.mem.Allocator) ![][*]const u8 {
+    var glfwExtensionCount: u32 = 0;
+    var glfwExtensions = c.glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    var extensions = std.ArrayList([*]const u8).init(allocator.*);
+    errdefer extensions.deinit();
+
+    std.debug.print(">> GLFW extensions: {}\n", .{glfwExtensionCount});
+    if (glfwExtensionCount > 0) {
+        for (glfwExtensions[0..glfwExtensionCount]) |ext| {
+            try extensions.append(ext);
+        }
+    }
+
+    const extra_extensions = switch (buildin.os.tag) {
         // see: https://vulkan.lunarg.com/doc/sdk/1.3.283.0/mac/getting_started.html
         // section `Common Problems - Encountered VK_ERROR_INCOMPATIBLE_DRIVER`
-        .ios, .macos, .tvos, .watchos => &[_][*:0]const u8{
+        .ios, .macos, .tvos, .watchos => &[_][*]const u8{
             c.VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
             c.VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
         },
         else => &.{},
     };
+
+    try extensions.appendSlice(extra_extensions);
+
+    return extensions.toOwnedSlice();
 }
 
 fn loadLibrary() !std.DynLib {
@@ -71,8 +88,9 @@ const Vulkan = struct {
     destroy_instance: GetFunctionPointer("vkDestroyInstance"),
     allocation_callbacks: ?*c.VkAllocationCallbacks,
 
-    fn init(entry: Entry) !Self {
-        const extensions = getExtensionNames();
+    fn init(allocator: *std.mem.Allocator, entry: Entry) !Self {
+        const extensions = try getExtensionNames(allocator);
+        defer allocator.free(extensions);
 
         const info = c.VkInstanceCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
@@ -150,14 +168,16 @@ const Loop = struct {
 };
 
 pub fn main() !void {
-    var entry = try Entry.init();
-    defer entry.deinit();
-
-    var vulkan = try Vulkan.init(entry);
-    defer vulkan.deinit();
+    var allocator = std.heap.c_allocator;
 
     var window = try Window.init();
     defer window.deinit();
+
+    var entry = try Entry.init();
+    defer entry.deinit();
+
+    var vulkan = try Vulkan.init(&allocator, entry);
+    defer vulkan.deinit();
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
