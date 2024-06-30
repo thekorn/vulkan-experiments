@@ -1,5 +1,10 @@
 # vulkan experiments
 
+This is a playground to experiment with the vulkan api in zig.
+currently it is drawing a triangle.
+
+![triangle](./doc/triangle.png)
+
 ## running
 
 Easiest ist to spawn the nix shell, which includes all dependencies.
