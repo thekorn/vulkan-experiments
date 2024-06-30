@@ -18,6 +18,7 @@ pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     unstable.zig_0_13
     unstable.zls
+    shaderc
   ];
   PKG_CONFIG_PATH = "${SDL2.dev}/lib/pkgconfig:${glfw}/lib/pkgconfig";
   NIX_SHELL_CFLAGS = "-isystem ${vulkan-headers}/include";

@@ -146,6 +146,11 @@ const Vulkan = struct {
     swapChainExtent: c.VkExtent2D,
     swapChainImageViews: []c.VkImageView,
     renderPass: c.VkRenderPass,
+    pipelineLayout: c.VkPipelineLayout,
+    graphicsPipeline: c.VkPipeline,
+    swapChainFramebuffers: []c.VkFramebuffer,
+    commandPool: c.VkCommandPool,
+    commandBuffers: []c.VkCommandBuffer,
 
     fn init(allocator: *std.mem.Allocator, entry: Entry) !Self {
         const extensions = try getExtensionNames(allocator);
@@ -189,6 +194,11 @@ const Vulkan = struct {
             .swapChainExtent = undefined,
             .swapChainImageViews = undefined,
             .renderPass = undefined,
+            .pipelineLayout = undefined,
+            .graphicsPipeline = undefined,
+            .swapChainFramebuffers = undefined,
+            .commandPool = undefined,
+            .commandBuffers = undefined,
         };
     }
 
@@ -641,6 +651,203 @@ const Vulkan = struct {
         const CreateRenderPass = try lookup(&self.entry.handle, "vkCreateRenderPass");
         try checkSuccess(CreateRenderPass(self.globalDevice, &renderPassInfo, null, &self.renderPass));
     }
+
+    fn createShaderModule(self: *Self, code: []align(@alignOf(u32)) const u8) !c.VkShaderModule {
+        const createInfo = c.VkShaderModuleCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+            .codeSize = code.len,
+            .pCode = std.mem.bytesAsSlice(u32, code).ptr,
+
+            .pNext = null,
+            .flags = 0,
+        };
+        const CreateShaderModule = try lookup(&self.entry.handle, "vkCreateShaderModule");
+
+        var shaderModule: c.VkShaderModule = undefined;
+        try checkSuccess(CreateShaderModule(self.globalDevice, &createInfo, null, &shaderModule));
+
+        return shaderModule;
+    }
+
+    fn createGraphicsPipeline(self: *Self, allocator: *std.mem.Allocator) !void {
+        _ = allocator;
+        const vertShaderCode align(4) = @embedFile("vert.spv").*;
+        const fragShaderCode align(4) = @embedFile("frag.spv").*;
+
+        const vertShaderModule = try self.createShaderModule(&vertShaderCode);
+        const fragShaderModule = try self.createShaderModule(&fragShaderCode);
+
+        const vertShaderStageInfo = c.VkPipelineShaderStageCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vertShaderModule,
+            .pName = "main",
+
+            .pNext = null,
+            .flags = 0,
+            .pSpecializationInfo = null,
+        };
+
+        const fragShaderStageInfo = c.VkPipelineShaderStageCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = fragShaderModule,
+            .pName = "main",
+            .pNext = null,
+            .flags = 0,
+
+            .pSpecializationInfo = null,
+        };
+
+        const shaderStages = [_]c.VkPipelineShaderStageCreateInfo{ vertShaderStageInfo, fragShaderStageInfo };
+
+        const vertexInputInfo = c.VkPipelineVertexInputStateCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount = 0,
+            .vertexAttributeDescriptionCount = 0,
+
+            .pVertexBindingDescriptions = null,
+            .pVertexAttributeDescriptions = null,
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const inputAssembly = c.VkPipelineInputAssemblyStateCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .primitiveRestartEnable = c.VK_FALSE,
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const viewport = [_]c.VkViewport{c.VkViewport{
+            .x = 0.0,
+            .y = 0.0,
+            .width = @floatFromInt(self.swapChainExtent.width),
+            .height = @floatFromInt(self.swapChainExtent.height),
+            .minDepth = 0.0,
+            .maxDepth = 1.0,
+        }};
+
+        const scissor = [_]c.VkRect2D{c.VkRect2D{
+            .offset = c.VkOffset2D{ .x = 0, .y = 0 },
+            .extent = self.swapChainExtent,
+        }};
+
+        const viewportState = c.VkPipelineViewportStateCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .viewportCount = 1,
+            .pViewports = &viewport,
+            .scissorCount = 1,
+            .pScissors = &scissor,
+
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const rasterizer = c.VkPipelineRasterizationStateCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .depthClampEnable = c.VK_FALSE,
+            .rasterizerDiscardEnable = c.VK_FALSE,
+            .polygonMode = c.VK_POLYGON_MODE_FILL,
+            .lineWidth = 1.0,
+            .cullMode = c.VK_CULL_MODE_BACK_BIT,
+            .frontFace = c.VK_FRONT_FACE_CLOCKWISE,
+            .depthBiasEnable = c.VK_FALSE,
+
+            .pNext = null,
+            .flags = 0,
+            .depthBiasConstantFactor = 0,
+            .depthBiasClamp = 0,
+            .depthBiasSlopeFactor = 0,
+        };
+
+        const multisampling = c.VkPipelineMultisampleStateCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .sampleShadingEnable = c.VK_FALSE,
+            .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+            .pNext = null,
+            .flags = 0,
+            .minSampleShading = 0,
+            .pSampleMask = null,
+            .alphaToCoverageEnable = 0,
+            .alphaToOneEnable = 0,
+        };
+
+        const colorBlendAttachment = c.VkPipelineColorBlendAttachmentState{
+            .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
+            .blendEnable = c.VK_FALSE,
+
+            .srcColorBlendFactor = c.VK_BLEND_FACTOR_ZERO,
+            .dstColorBlendFactor = c.VK_BLEND_FACTOR_ZERO,
+            .colorBlendOp = c.VK_BLEND_OP_ADD,
+            .srcAlphaBlendFactor = c.VK_BLEND_FACTOR_ZERO,
+            .dstAlphaBlendFactor = c.VK_BLEND_FACTOR_ZERO,
+            .alphaBlendOp = c.VK_BLEND_OP_ADD,
+        };
+
+        const colorBlending = c.VkPipelineColorBlendStateCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .logicOpEnable = c.VK_FALSE,
+            .logicOp = c.VK_LOGIC_OP_COPY,
+            .attachmentCount = 1,
+            .pAttachments = &colorBlendAttachment,
+            .blendConstants = [_]f32{ 0, 0, 0, 0 },
+
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const pipelineLayoutInfo = c.VkPipelineLayoutCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+            .setLayoutCount = 0,
+            .pushConstantRangeCount = 0,
+            .pNext = null,
+            .flags = 0,
+            .pSetLayouts = null,
+            .pPushConstantRanges = null,
+        };
+
+        const CreatePipelineLayout = try lookup(&self.entry.handle, "vkCreatePipelineLayout");
+        try checkSuccess(CreatePipelineLayout(self.globalDevice, &pipelineLayoutInfo, null, &self.pipelineLayout));
+
+        const pipelineInfo = [_]c.VkGraphicsPipelineCreateInfo{c.VkGraphicsPipelineCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = @intCast(shaderStages.len),
+            .pStages = &shaderStages,
+            .pVertexInputState = &vertexInputInfo,
+            .pInputAssemblyState = &inputAssembly,
+            .pViewportState = &viewportState,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pColorBlendState = &colorBlending,
+            .layout = self.pipelineLayout,
+            .renderPass = self.renderPass,
+            .subpass = 0,
+            .basePipelineHandle = null,
+
+            .pNext = null,
+            .flags = 0,
+            .pTessellationState = null,
+            .pDepthStencilState = null,
+            .pDynamicState = null,
+            .basePipelineIndex = 0,
+        }};
+
+        const CreateGraphicsPipelines = try lookup(&self.entry.handle, "vkCreateGraphicsPipelines");
+        try checkSuccess(CreateGraphicsPipelines(
+            self.globalDevice,
+            null,
+            @intCast(pipelineInfo.len),
+            &pipelineInfo,
+            null,
+            @as(*[1]c.VkPipeline, &self.graphicsPipeline),
+        ));
+
+        const DestroyShaderModule = try lookup(&self.entry.handle, "vkDestroyShaderModule");
+        DestroyShaderModule(self.globalDevice, fragShaderModule, null);
+        DestroyShaderModule(self.globalDevice, vertShaderModule, null);
+    }
 };
 
 const CStrContext = struct {
@@ -728,6 +935,7 @@ pub fn main() !void {
     try vulkan.createSwapChain(&allocator, &window);
     try vulkan.createImageViews(&allocator);
     try vulkan.createRenderPass();
+    try vulkan.createGraphicsPipeline(&allocator);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();

@@ -5,6 +5,22 @@ fn translateCImports(b: *std.Build) !*std.Build.Step {
     return &tool_run.step;
 }
 
+fn addShader(b: *std.Build, exe: anytype, in_file: []const u8, out_file: []const u8) !void {
+    // example:
+    // glslc -o shaders/vert.spv shaders/shader.vert
+    const dirname = "shaders";
+    const full_in = try std.fs.path.join(b.allocator, &[_][]const u8{ dirname, in_file });
+    const full_out = try std.fs.path.join(b.allocator, &[_][]const u8{ "src", out_file });
+
+    const run_cmd = b.addSystemCommand(&[_][]const u8{
+        "glslc",
+        "-o",
+        full_out,
+        full_in,
+    });
+    exe.step.dependOn(&run_cmd.step);
+}
+
 // Although this function looks imperative, note that its job is to
 // declaratively construct a build graph that will be executed by an external
 // runner.
@@ -44,6 +60,13 @@ pub fn build(b: *std.Build) void {
     exe.linkLibC();
     exe.linkSystemLibrary("SDL2");
     exe.linkSystemLibrary("glfw");
+
+    addShader(b, exe, "shader.vert", "vert.spv") catch |e| {
+        std.debug.print("Failed to compile vertex shader: {}\n", .{e});
+    };
+    addShader(b, exe, "shader.frag", "frag.spv") catch |e| {
+        std.debug.print("Failed to compile vertex shader: {}\n", .{e});
+    };
 
     if (generate_bindings) {
         const cImports_step = try translateCImports(b);
