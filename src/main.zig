@@ -11,23 +11,6 @@ fn checkSuccess(result: c.VkResult) !void {
     }
 }
 
-const CStrHashMapContext = struct {
-    fn hash(a: [*:0]const u8) u64 {
-        // FNV 32-bit hash
-        var h: u32 = 2166136261;
-        var i: usize = 0;
-        while (a[i] != 0) : (i += 1) {
-            h ^= a[i];
-            h *%= 16777619;
-        }
-        return h;
-    }
-
-    fn eql(a: [*:0]const u8, b: [*:0]const u8) bool {
-        return std.cstr.cmp(a, b) == 0;
-    }
-};
-
 fn GetFunctionPointer(comptime name: []const u8) type {
     return std.meta.Child(@field(c, "PFN_" ++ name));
 }
@@ -110,13 +93,13 @@ const SwapChainSupportDetails = struct {
     presentModes: std.ArrayList(c.VkPresentModeKHR),
 
     fn init(allocator: *std.mem.Allocator) SwapChainSupportDetails {
-        var result = SwapChainSupportDetails{
+        const result = SwapChainSupportDetails{
             .capabilities = undefined,
-            .formats = std.ArrayList(c.VkSurfaceFormatKHR).init(allocator),
-            .presentModes = std.ArrayList(c.VkPresentModeKHR).init(allocator),
+            .formats = std.ArrayList(c.VkSurfaceFormatKHR).init(allocator.*),
+            .presentModes = std.ArrayList(c.VkPresentModeKHR).init(allocator.*),
         };
-        const slice = std.mem.sliceAsBytes(@as(*[1]c.VkSurfaceCapabilitiesKHR, &result.capabilities)[0..1]);
-        std.mem.set(u8, slice, 0);
+        //const slice = std.mem.sliceAsBytes(@as(*[1]c.VkSurfaceCapabilitiesKHR, &result.capabilities)[0..1]);
+        //std.mem.set(u8, slice, 0);
         return result;
     }
 
@@ -201,7 +184,9 @@ const Vulkan = struct {
 
     fn pickPhysicalDevice(self: *Self, allocator: *std.mem.Allocator) !void {
         var deviceCount: u32 = 0;
-        try checkSuccess(c.vkEnumeratePhysicalDevices(self.instance, &deviceCount, null));
+
+        const enum_physical_devices = try lookup(&self.entry.handle, "vkEnumeratePhysicalDevices");
+        try checkSuccess(enum_physical_devices(self.instance, &deviceCount, null));
 
         if (deviceCount == 0) {
             return error.FailedToFindGPUsWithVulkanSupport;
@@ -209,7 +194,7 @@ const Vulkan = struct {
 
         const devices = try allocator.alloc(c.VkPhysicalDevice, deviceCount);
         defer allocator.free(devices);
-        try checkSuccess(c.vkEnumeratePhysicalDevices(self.instance, &deviceCount, devices.ptr));
+        try checkSuccess(enum_physical_devices(self.instance, &deviceCount, devices.ptr));
 
         self.physicalDevice = for (devices) |device| {
             if (try self.isDeviceSuitable(allocator, device)) {
@@ -235,23 +220,28 @@ const Vulkan = struct {
 
     fn querySwapChainSupport(self: *Self, allocator: *std.mem.Allocator, device: c.VkPhysicalDevice) !SwapChainSupportDetails {
         var details = SwapChainSupportDetails.init(allocator);
+        const GetPhysicalDeviceSurfaceCapabilitiesKHR = try lookup(&self.entry.handle, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
 
-        try checkSuccess(c.vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, self.surface, &details.capabilities));
+        const GetPhysicalDeviceSurfaceFormatsKHR = try lookup(&self.entry.handle, "vkGetPhysicalDeviceSurfaceFormatsKHR");
+
+        try checkSuccess(GetPhysicalDeviceSurfaceCapabilitiesKHR(device, self.surface, &details.capabilities));
 
         var formatCount: u32 = undefined;
-        try checkSuccess(c.vkGetPhysicalDeviceSurfaceFormatsKHR(device, self.surface, &formatCount, null));
+        try checkSuccess(GetPhysicalDeviceSurfaceFormatsKHR(device, self.surface, &formatCount, null));
 
         if (formatCount != 0) {
             try details.formats.resize(formatCount);
-            try checkSuccess(c.vkGetPhysicalDeviceSurfaceFormatsKHR(device, self.surface, &formatCount, details.formats.items.ptr));
+            try checkSuccess(GetPhysicalDeviceSurfaceFormatsKHR(device, self.surface, &formatCount, details.formats.items.ptr));
         }
 
+        const GetPhysicalDeviceSurfacePresentModesKHR = try lookup(&self.entry.handle, "vkGetPhysicalDeviceSurfacePresentModesKHR");
+
         var presentModeCount: u32 = undefined;
-        try checkSuccess(c.vkGetPhysicalDeviceSurfacePresentModesKHR(device, self.surface, &presentModeCount, null));
+        try checkSuccess(GetPhysicalDeviceSurfacePresentModesKHR(device, self.surface, &presentModeCount, null));
 
         if (presentModeCount != 0) {
             try details.presentModes.resize(presentModeCount);
-            try checkSuccess(c.vkGetPhysicalDeviceSurfacePresentModesKHR(device, self.surface, &presentModeCount, details.presentModes.items.ptr));
+            try checkSuccess(GetPhysicalDeviceSurfacePresentModesKHR(device, self.surface, &presentModeCount, details.presentModes.items.ptr));
         }
 
         return details;
@@ -260,12 +250,14 @@ const Vulkan = struct {
     fn findQueueFamilies(self: *Self, allocator: *std.mem.Allocator, device: c.VkPhysicalDevice) !QueueFamilyIndices {
         var indices = QueueFamilyIndices.init();
 
+        const GetPhysicalDeviceQueueFamilyProperties = try lookup(&self.entry.handle, "vkGetPhysicalDeviceQueueFamilyProperties");
+
         var queueFamilyCount: u32 = 0;
-        c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, null);
+        GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, null);
 
         const queueFamilies = try allocator.alloc(c.VkQueueFamilyProperties, queueFamilyCount);
         defer allocator.free(queueFamilies);
-        c.vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.ptr);
+        GetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.ptr);
 
         var i: u32 = 0;
         for (queueFamilies) |queueFamily| {
@@ -276,7 +268,9 @@ const Vulkan = struct {
             }
 
             var presentSupport: c.VkBool32 = 0;
-            try checkSuccess(c.vkGetPhysicalDeviceSurfaceSupportKHR(device, i, self.surface, &presentSupport));
+            const GetPhysicalDeviceSurfaceSupportKHR = try lookup(&self.entry.handle, "vkGetPhysicalDeviceSurfaceSupportKHR");
+
+            try checkSuccess(GetPhysicalDeviceSurfaceSupportKHR(device, i, self.surface, &presentSupport));
 
             if (queueFamily.queueCount > 0 and presentSupport != 0) {
                 indices.presentFamily = i;
@@ -293,19 +287,19 @@ const Vulkan = struct {
     }
 
     fn checkDeviceExtensionSupport(self: *Self, allocator: *std.mem.Allocator, device: c.VkPhysicalDevice) !bool {
-        _ = self;
         var extensionCount: u32 = undefined;
-        try checkSuccess(c.vkEnumerateDeviceExtensionProperties(device, null, &extensionCount, null));
+        const EnumerateDeviceExtensionProperties = try lookup(&self.entry.handle, "vkEnumerateDeviceExtensionProperties");
+        try checkSuccess(EnumerateDeviceExtensionProperties(device, null, &extensionCount, null));
 
         const availableExtensions = try allocator.alloc(c.VkExtensionProperties, extensionCount);
         defer allocator.free(availableExtensions);
-        try checkSuccess(c.vkEnumerateDeviceExtensionProperties(device, null, &extensionCount, availableExtensions.ptr));
+        try checkSuccess(EnumerateDeviceExtensionProperties(device, null, &extensionCount, availableExtensions.ptr));
 
-        const CStrHashMap = std.HashMap(
+        const CStrHashMap = std.hash_map.HashMap(
             [*:0]const u8,
             void,
-            CStrHashMapContext,
-            50,
+            CStrContext,
+            std.hash_map.default_max_load_percentage,
         );
         var requiredExtensions = CStrHashMap.init(allocator.*);
         defer requiredExtensions.deinit();
@@ -318,6 +312,26 @@ const Vulkan = struct {
         }
 
         return requiredExtensions.count() == 0;
+    }
+};
+
+const CStrContext = struct {
+    const Self = @This();
+    pub fn hash(self: Self, a: [*:0]const u8) u64 {
+        _ = self;
+        // FNV 32-bit hash
+        var h: u32 = 2166136261;
+        var i: usize = 0;
+        while (a[i] != 0) : (i += 1) {
+            h ^= a[i];
+            h *%= 16777619;
+        }
+        return h;
+    }
+
+    pub fn eql(self: Self, a: [*:0]const u8, b: [*:0]const u8) bool {
+        _ = self;
+        return std.mem.orderZ(u8, a, b) == .eq;
     }
 };
 
