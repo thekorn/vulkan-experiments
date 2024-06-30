@@ -144,6 +144,7 @@ const Vulkan = struct {
     swapChain: c.VkSwapchainKHR,
     swapChainImageFormat: c.VkFormat,
     swapChainExtent: c.VkExtent2D,
+    swapChainImageViews: []c.VkImageView,
 
     fn init(allocator: *std.mem.Allocator, entry: Entry) !Self {
         const extensions = try getExtensionNames(allocator);
@@ -185,6 +186,7 @@ const Vulkan = struct {
             .swapChain = undefined,
             .swapChainImageFormat = undefined,
             .swapChainExtent = undefined,
+            .swapChainImageViews = undefined,
         };
     }
 
@@ -544,6 +546,39 @@ const Vulkan = struct {
         self.swapChainImageFormat = surfaceFormat.format;
         self.swapChainExtent = extent;
     }
+
+    fn createImageViews(self: *Self, allocator: *std.mem.Allocator) !void {
+        self.swapChainImageViews = try allocator.alloc(c.VkImageView, self.swapChainImages.len);
+        errdefer allocator.free(self.swapChainImageViews);
+
+        for (self.swapChainImages, 0..) |swap_chain_image, i| {
+            const createInfo = c.VkImageViewCreateInfo{
+                .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = swap_chain_image,
+                .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+                .format = self.swapChainImageFormat,
+                .components = c.VkComponentMapping{
+                    .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                },
+                .subresourceRange = c.VkImageSubresourceRange{
+                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+
+                .pNext = null,
+                .flags = 0,
+            };
+
+            const CreateImageView = try lookup(&self.entry.handle, "vkCreateImageView");
+            try checkSuccess(CreateImageView(self.globalDevice, &createInfo, null, &self.swapChainImageViews[i]));
+        }
+    }
 };
 
 const CStrContext = struct {
@@ -629,6 +664,7 @@ pub fn main() !void {
     try vulkan.pickPhysicalDevice(&allocator);
     try vulkan.createLogicalDevice(&allocator);
     try vulkan.createSwapChain(&allocator, &window);
+    try vulkan.createImageViews(&allocator);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
