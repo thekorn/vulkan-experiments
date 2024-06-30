@@ -2,6 +2,8 @@ const std = @import("std");
 const c = @import("c.zig");
 const buildin = @import("builtin");
 
+const enableValidationLayers = std.debug.runtime_safety;
+const validationLayers = [_][*:0]const u8{"VK_LAYER_LUNARG_standard_validation"};
 const deviceExtensions = [_][*:0]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
 fn checkSuccess(result: c.VkResult) !void {
@@ -135,6 +137,9 @@ const Vulkan = struct {
     destroy_instance: GetFunctionPointer("vkDestroyInstance"),
     allocation_callbacks: ?*c.VkAllocationCallbacks,
     physicalDevice: c.VkPhysicalDevice,
+    globalDevice: c.VkDevice,
+    graphicsQueue: c.VkQueue,
+    presentQueue: c.VkQueue,
 
     fn init(allocator: *std.mem.Allocator, entry: Entry) !Self {
         const extensions = try getExtensionNames(allocator);
@@ -169,6 +174,9 @@ const Vulkan = struct {
             .allocation_callbacks = allocation_callbacks,
             .surface = surface,
             .physicalDevice = undefined,
+            .globalDevice = undefined,
+            .graphicsQueue = undefined,
+            .presentQueue = undefined,
         };
     }
 
@@ -313,6 +321,114 @@ const Vulkan = struct {
 
         return requiredExtensions.count() == 0;
     }
+
+    fn createLogicalDevice(self: *Self, allocator: *std.mem.Allocator) !void {
+        const indices = try self.findQueueFamilies(allocator, self.physicalDevice);
+
+        var queueCreateInfos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(allocator.*);
+        defer queueCreateInfos.deinit();
+        const all_queue_families = [_]u32{ indices.graphicsFamily.?, indices.presentFamily.? };
+        const uniqueQueueFamilies = if (indices.graphicsFamily.? == indices.presentFamily.?)
+            all_queue_families[0..1]
+        else
+            all_queue_families[0..2];
+
+        var queuePriority: f32 = 1.0;
+        for (uniqueQueueFamilies) |queueFamily| {
+            const queueCreateInfo = c.VkDeviceQueueCreateInfo{
+                .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                .queueFamilyIndex = queueFamily,
+                .queueCount = 1,
+                .pQueuePriorities = &queuePriority,
+                .pNext = null,
+                .flags = 0,
+            };
+            try queueCreateInfos.append(queueCreateInfo);
+        }
+
+        const deviceFeatures = c.VkPhysicalDeviceFeatures{
+            .robustBufferAccess = 0,
+            .fullDrawIndexUint32 = 0,
+            .imageCubeArray = 0,
+            .independentBlend = 0,
+            .geometryShader = 0,
+            .tessellationShader = 0,
+            .sampleRateShading = 0,
+            .dualSrcBlend = 0,
+            .logicOp = 0,
+            .multiDrawIndirect = 0,
+            .drawIndirectFirstInstance = 0,
+            .depthClamp = 0,
+            .depthBiasClamp = 0,
+            .fillModeNonSolid = 0,
+            .depthBounds = 0,
+            .wideLines = 0,
+            .largePoints = 0,
+            .alphaToOne = 0,
+            .multiViewport = 0,
+            .samplerAnisotropy = 0,
+            .textureCompressionETC2 = 0,
+            .textureCompressionASTC_LDR = 0,
+            .textureCompressionBC = 0,
+            .occlusionQueryPrecise = 0,
+            .pipelineStatisticsQuery = 0,
+            .vertexPipelineStoresAndAtomics = 0,
+            .fragmentStoresAndAtomics = 0,
+            .shaderTessellationAndGeometryPointSize = 0,
+            .shaderImageGatherExtended = 0,
+            .shaderStorageImageExtendedFormats = 0,
+            .shaderStorageImageMultisample = 0,
+            .shaderStorageImageReadWithoutFormat = 0,
+            .shaderStorageImageWriteWithoutFormat = 0,
+            .shaderUniformBufferArrayDynamicIndexing = 0,
+            .shaderSampledImageArrayDynamicIndexing = 0,
+            .shaderStorageBufferArrayDynamicIndexing = 0,
+            .shaderStorageImageArrayDynamicIndexing = 0,
+            .shaderClipDistance = 0,
+            .shaderCullDistance = 0,
+            .shaderFloat64 = 0,
+            .shaderInt64 = 0,
+            .shaderInt16 = 0,
+            .shaderResourceResidency = 0,
+            .shaderResourceMinLod = 0,
+            .sparseBinding = 0,
+            .sparseResidencyBuffer = 0,
+            .sparseResidencyImage2D = 0,
+            .sparseResidencyImage3D = 0,
+            .sparseResidency2Samples = 0,
+            .sparseResidency4Samples = 0,
+            .sparseResidency8Samples = 0,
+            .sparseResidency16Samples = 0,
+            .sparseResidencyAliased = 0,
+            .variableMultisampleRate = 0,
+            .inheritedQueries = 0,
+        };
+
+        const createInfo = c.VkDeviceCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+
+            .queueCreateInfoCount = @intCast(queueCreateInfos.items.len),
+            .pQueueCreateInfos = queueCreateInfos.items.ptr,
+
+            .pEnabledFeatures = &deviceFeatures,
+
+            .enabledExtensionCount = @intCast(deviceExtensions.len),
+            .ppEnabledExtensionNames = &deviceExtensions,
+            .enabledLayerCount = if (enableValidationLayers) @intCast(validationLayers.len) else 0,
+            .ppEnabledLayerNames = if (enableValidationLayers) &validationLayers else null,
+
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const CreateDevice = try lookup(&self.entry.handle, "vkCreateDevice");
+        try checkSuccess(CreateDevice(self.physicalDevice, &createInfo, null, &self.globalDevice));
+
+        const GetDeviceQueue = try lookup(&self.entry.handle, "vkGetDeviceQueue");
+
+        GetDeviceQueue(self.globalDevice, indices.graphicsFamily.?, 0, &self.graphicsQueue);
+        GetDeviceQueue(self.globalDevice, indices.presentFamily.?, 0, &self.presentQueue);
+    }
 };
 
 const CStrContext = struct {
@@ -390,6 +506,7 @@ pub fn main() !void {
 
     try vulkan.createSurface(&window);
     try vulkan.pickPhysicalDevice(&allocator);
+    try vulkan.createLogicalDevice(&allocator);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
