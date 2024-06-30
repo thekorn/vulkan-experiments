@@ -669,8 +669,7 @@ const Vulkan = struct {
         return shaderModule;
     }
 
-    fn createGraphicsPipeline(self: *Self, allocator: *std.mem.Allocator) !void {
-        _ = allocator;
+    fn createGraphicsPipeline(self: *Self) !void {
         const vertShaderCode align(4) = @embedFile("vert.spv").*;
         const fragShaderCode align(4) = @embedFile("frag.spv").*;
 
@@ -848,6 +847,31 @@ const Vulkan = struct {
         DestroyShaderModule(self.globalDevice, fragShaderModule, null);
         DestroyShaderModule(self.globalDevice, vertShaderModule, null);
     }
+
+    fn createFramebuffers(self: *Self, allocator: *std.mem.Allocator) !void {
+        self.swapChainFramebuffers = try allocator.alloc(c.VkFramebuffer, self.swapChainImageViews.len);
+
+        const CreateFramebuffer = try lookup(&self.entry.handle, "vkCreateFramebuffer");
+
+        for (self.swapChainImageViews, 0..) |swap_chain_image_view, i| {
+            const attachments = [_]c.VkImageView{swap_chain_image_view};
+
+            const framebufferInfo = c.VkFramebufferCreateInfo{
+                .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                .renderPass = self.renderPass,
+                .attachmentCount = 1,
+                .pAttachments = &attachments,
+                .width = self.swapChainExtent.width,
+                .height = self.swapChainExtent.height,
+                .layers = 1,
+
+                .pNext = null,
+                .flags = 0,
+            };
+
+            try checkSuccess(CreateFramebuffer(self.globalDevice, &framebufferInfo, null, &self.swapChainFramebuffers[i]));
+        }
+    }
 };
 
 const CStrContext = struct {
@@ -935,7 +959,8 @@ pub fn main() !void {
     try vulkan.createSwapChain(&allocator, &window);
     try vulkan.createImageViews(&allocator);
     try vulkan.createRenderPass();
-    try vulkan.createGraphicsPipeline(&allocator);
+    try vulkan.createGraphicsPipeline();
+    try vulkan.createFramebuffers(&allocator);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
