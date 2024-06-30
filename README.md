@@ -47,3 +47,4 @@ zig build -Dgenerate-bindings
 - [Vulkan youtube series by Codotaku](https://www.youtube.com/watch?v=Kf7BIPUUfsc) with [source code](https://github.com/CodesOtakuYT/vulkan_zig)
 - [Vulkan & SDL2 by Codotaku](https://www.youtube.com/playlist?list=PLlKj-4rp1Gz2KfP0B0XN2a5i-WFjhyzrh) with [source](https://github.com/CodesOtakuYT/zig_vk)
 - [zig + vulkan + glfw by andrewrk](https://github.com/andrewrk/zig-vulkan-triangle/tree/master)
+- [vulkan game engine tutorials by Brendan Galea](https://www.youtube.com/playlist?list=PL8327DO66nu9qYVKLDmdLW_84-yE4auCR)
