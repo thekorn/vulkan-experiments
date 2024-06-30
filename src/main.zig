@@ -214,6 +214,47 @@ const Vulkan = struct {
     }
 
     fn deinit(self: *Self) void {
+        const DestroySemaphore = lookup(&self.entry.handle, "vkDestroySemaphore") catch unreachable;
+        const DestroyFence = lookup(&self.entry.handle, "vkDestroyFence") catch unreachable;
+        const DestroyCommandPool = lookup(&self.entry.handle, "vkDestroyCommandPool") catch unreachable;
+        const DestroyFramebuffer = lookup(&self.entry.handle, "vkDestroyFramebuffer") catch unreachable;
+        const DestroyPipeline = lookup(&self.entry.handle, "vkDestroyPipeline") catch unreachable;
+        const DestroyPipelineLayout = lookup(&self.entry.handle, "vkDestroyPipelineLayout") catch unreachable;
+        const DestroyRenderPass = lookup(&self.entry.handle, "vkDestroyRenderPass") catch unreachable;
+        const DestroyImageView = lookup(&self.entry.handle, "vkDestroyImageView") catch unreachable;
+        const DestroySwapchainKHR = lookup(&self.entry.handle, "vkDestroySwapchainKHR") catch unreachable;
+        const DestroyDevice = lookup(&self.entry.handle, "vkDestroyDevice") catch unreachable;
+        const DestroySurfaceKHR = lookup(&self.entry.handle, "vkDestroySurfaceKHR") catch unreachable;
+
+        var i: usize = 0;
+        while (i < MAX_FRAMES_IN_FLIGHT) : (i += 1) {
+            DestroySemaphore(self.globalDevice, self.renderFinishedSemaphores[i], null);
+            DestroySemaphore(self.globalDevice, self.imageAvailableSemaphores[i], null);
+            DestroyFence(self.globalDevice, self.inFlightFences[i], null);
+        }
+
+        DestroyCommandPool(self.globalDevice, self.commandPool, null);
+
+        for (self.swapChainFramebuffers) |framebuffer| {
+            DestroyFramebuffer(self.globalDevice, framebuffer, null);
+        }
+
+        DestroyPipeline(self.globalDevice, self.graphicsPipeline, null);
+        DestroyPipelineLayout(self.globalDevice, self.pipelineLayout, null);
+        DestroyRenderPass(self.globalDevice, self.renderPass, null);
+
+        for (self.swapChainImageViews) |imageView| {
+            DestroyImageView(self.globalDevice, imageView, null);
+        }
+
+        DestroySwapchainKHR(self.globalDevice, self.swapChain, null);
+        DestroyDevice(self.globalDevice, null);
+
+        //if (enableValidationLayers) {
+        //    DestroyDebugReportCallbackEXT(null);
+        //}
+
+        DestroySurfaceKHR(self.instance, self.surface, null);
         self.destroy_instance(self.instance, self.allocation_callbacks);
     }
 
