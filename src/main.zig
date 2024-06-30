@@ -872,6 +872,21 @@ const Vulkan = struct {
             try checkSuccess(CreateFramebuffer(self.globalDevice, &framebufferInfo, null, &self.swapChainFramebuffers[i]));
         }
     }
+
+    fn createCommandPool(self: *Self, allocator: *std.mem.Allocator) !void {
+        const queueFamilyIndices = try self.findQueueFamilies(allocator, self.physicalDevice);
+
+        const poolInfo = c.VkCommandPoolCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .queueFamilyIndex = queueFamilyIndices.graphicsFamily.?,
+
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const CreateCommandPool = try lookup(&self.entry.handle, "vkCreateCommandPool");
+        try checkSuccess(CreateCommandPool(self.globalDevice, &poolInfo, null, &self.commandPool));
+    }
 };
 
 const CStrContext = struct {
@@ -961,6 +976,7 @@ pub fn main() !void {
     try vulkan.createRenderPass();
     try vulkan.createGraphicsPipeline();
     try vulkan.createFramebuffers(&allocator);
+    try vulkan.createCommandPool(&allocator);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
