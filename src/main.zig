@@ -887,6 +887,66 @@ const Vulkan = struct {
         const CreateCommandPool = try lookup(&self.entry.handle, "vkCreateCommandPool");
         try checkSuccess(CreateCommandPool(self.globalDevice, &poolInfo, null, &self.commandPool));
     }
+
+    fn createCommandBuffers(self: *Self, allocator: *std.mem.Allocator) !void {
+        self.commandBuffers = try allocator.alloc(c.VkCommandBuffer, self.swapChainFramebuffers.len);
+
+        const allocInfo = c.VkCommandBufferAllocateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = self.commandPool,
+            .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = @intCast(self.commandBuffers.len),
+            .pNext = null,
+        };
+
+        const AllocateCommandBuffers = try lookup(&self.entry.handle, "vkAllocateCommandBuffers");
+        try checkSuccess(AllocateCommandBuffers(self.globalDevice, &allocInfo, self.commandBuffers.ptr));
+
+        const BeginCommandBuffer = try lookup(&self.entry.handle, "vkBeginCommandBuffer");
+        const CmdBeginRenderPass = try lookup(&self.entry.handle, "vkCmdBeginRenderPass");
+        const CmdBindPipeline = try lookup(&self.entry.handle, "vkCmdBindPipeline");
+        const CmdDraw = try lookup(&self.entry.handle, "vkCmdDraw");
+        const CmdEndRenderPass = try lookup(&self.entry.handle, "vkCmdEndRenderPass");
+        const EndCommandBuffer = try lookup(&self.entry.handle, "vkEndCommandBuffer");
+
+        for (self.commandBuffers, 0..) |_, i| {
+            const beginInfo = c.VkCommandBufferBeginInfo{
+                .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .flags = c.VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT,
+                .pNext = null,
+                .pInheritanceInfo = null,
+            };
+
+            try checkSuccess(BeginCommandBuffer(self.commandBuffers[i], &beginInfo));
+
+            const clearColor = [1]c.VkClearValue{c.VkClearValue{
+                .color = c.VkClearColorValue{ .float32 = [_]f32{ 0.0, 0.0, 0.0, 1.0 } },
+            }};
+
+            const renderPassInfo = c.VkRenderPassBeginInfo{
+                .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                .renderPass = self.renderPass,
+                .framebuffer = self.swapChainFramebuffers[i],
+                .renderArea = c.VkRect2D{
+                    .offset = c.VkOffset2D{ .x = 0, .y = 0 },
+                    .extent = self.swapChainExtent,
+                },
+                .clearValueCount = 1,
+                .pClearValues = @as(*const [1]c.VkClearValue, &clearColor),
+
+                .pNext = null,
+            };
+
+            CmdBeginRenderPass(self.commandBuffers[i], &renderPassInfo, c.VK_SUBPASS_CONTENTS_INLINE);
+            {
+                CmdBindPipeline(self.commandBuffers[i], c.VK_PIPELINE_BIND_POINT_GRAPHICS, self.graphicsPipeline);
+                CmdDraw(self.commandBuffers[i], 3, 1, 0, 0);
+            }
+            CmdEndRenderPass(self.commandBuffers[i]);
+
+            try checkSuccess(EndCommandBuffer(self.commandBuffers[i]));
+        }
+    }
 };
 
 const CStrContext = struct {
@@ -977,6 +1037,7 @@ pub fn main() !void {
     try vulkan.createGraphicsPipeline();
     try vulkan.createFramebuffers(&allocator);
     try vulkan.createCommandPool(&allocator);
+    try vulkan.createCommandBuffers(&allocator);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
