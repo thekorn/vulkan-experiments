@@ -2,6 +2,8 @@ const std = @import("std");
 const c = @import("c.zig");
 const buildin = @import("builtin");
 
+const MAX_FRAMES_IN_FLIGHT = 2;
+
 const enableValidationLayers = std.debug.runtime_safety;
 const validationLayers = [_][*:0]const u8{"VK_LAYER_LUNARG_standard_validation"};
 const deviceExtensions = [_][*:0]const u8{c.VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -151,6 +153,11 @@ const Vulkan = struct {
     swapChainFramebuffers: []c.VkFramebuffer,
     commandPool: c.VkCommandPool,
     commandBuffers: []c.VkCommandBuffer,
+    currentFrame: usize,
+
+    imageAvailableSemaphores: [MAX_FRAMES_IN_FLIGHT]c.VkSemaphore,
+    renderFinishedSemaphores: [MAX_FRAMES_IN_FLIGHT]c.VkSemaphore,
+    inFlightFences: [MAX_FRAMES_IN_FLIGHT]c.VkFence,
 
     fn init(allocator: *std.mem.Allocator, entry: Entry) !Self {
         const extensions = try getExtensionNames(allocator);
@@ -199,6 +206,10 @@ const Vulkan = struct {
             .swapChainFramebuffers = undefined,
             .commandPool = undefined,
             .commandBuffers = undefined,
+            .imageAvailableSemaphores = undefined,
+            .renderFinishedSemaphores = undefined,
+            .inFlightFences = undefined,
+            .currentFrame = 0,
         };
     }
 
@@ -947,6 +958,84 @@ const Vulkan = struct {
             try checkSuccess(EndCommandBuffer(self.commandBuffers[i]));
         }
     }
+
+    fn createSyncObjects(self: *Self) !void {
+        const semaphoreInfo = c.VkSemaphoreCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const fenceInfo = c.VkFenceCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .flags = c.VK_FENCE_CREATE_SIGNALED_BIT,
+            .pNext = null,
+        };
+
+        const CreateSemaphore = try lookup(&self.entry.handle, "vkCreateSemaphore");
+        const CreateFence = try lookup(&self.entry.handle, "vkCreateFence");
+
+        var i: usize = 0;
+        while (i < MAX_FRAMES_IN_FLIGHT) : (i += 1) {
+            try checkSuccess(CreateSemaphore(self.globalDevice, &semaphoreInfo, null, &self.imageAvailableSemaphores[i]));
+            try checkSuccess(CreateSemaphore(self.globalDevice, &semaphoreInfo, null, &self.renderFinishedSemaphores[i]));
+            try checkSuccess(CreateFence(self.globalDevice, &fenceInfo, null, &self.inFlightFences[i]));
+        }
+    }
+
+    fn drawFrame(self: *Self) !void {
+        const WaitForFences = try lookup(&self.entry.handle, "vkWaitForFences");
+        const ResetFences = try lookup(&self.entry.handle, "vkResetFences");
+        const AcquireNextImageKHR = try lookup(&self.entry.handle, "vkAcquireNextImageKHR");
+        const QueueSubmit = try lookup(&self.entry.handle, "vkQueueSubmit");
+        const QueuePresentKHR = try lookup(&self.entry.handle, "vkQueuePresentKHR");
+
+        try checkSuccess(WaitForFences(self.globalDevice, 1, @as(*[1]c.VkFence, &self.inFlightFences[self.currentFrame]), c.VK_TRUE, std.math.maxInt(u64)));
+        try checkSuccess(ResetFences(self.globalDevice, 1, @as(*[1]c.VkFence, &self.inFlightFences[self.currentFrame])));
+
+        var imageIndex: u32 = undefined;
+        try checkSuccess(AcquireNextImageKHR(self.globalDevice, self.swapChain, std.math.maxInt(u64), self.imageAvailableSemaphores[self.currentFrame], null, &imageIndex));
+
+        var waitSemaphores = [_]c.VkSemaphore{self.imageAvailableSemaphores[self.currentFrame]};
+        var waitStages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+        const signalSemaphores = [_]c.VkSemaphore{self.renderFinishedSemaphores[self.currentFrame]};
+
+        var submitInfo = [_]c.VkSubmitInfo{c.VkSubmitInfo{
+            .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &waitSemaphores,
+            .pWaitDstStageMask = &waitStages,
+            .commandBufferCount = 1,
+            .pCommandBuffers = self.commandBuffers.ptr + imageIndex,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &signalSemaphores,
+
+            .pNext = null,
+        }};
+
+        try checkSuccess(QueueSubmit(self.graphicsQueue, 1, &submitInfo, self.inFlightFences[self.currentFrame]));
+
+        const swapChains = [_]c.VkSwapchainKHR{self.swapChain};
+        const presentInfo = c.VkPresentInfoKHR{
+            .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &signalSemaphores,
+
+            .swapchainCount = 1,
+            .pSwapchains = &swapChains,
+
+            .pImageIndices = @ptrCast(&imageIndex),
+
+            .pNext = null,
+            .pResults = null,
+        };
+
+        try checkSuccess(QueuePresentKHR(self.presentQueue, &presentInfo));
+
+        self.currentFrame = (self.currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    }
 };
 
 const CStrContext = struct {
@@ -1038,11 +1127,13 @@ pub fn main() !void {
     try vulkan.createFramebuffers(&allocator);
     try vulkan.createCommandPool(&allocator);
     try vulkan.createCommandBuffers(&allocator);
+    try vulkan.createSyncObjects();
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
 
     while (loop.is_running()) {
         c.glfwPollEvents();
+        try vulkan.drawFrame();
     }
 }
