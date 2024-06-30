@@ -140,6 +140,10 @@ const Vulkan = struct {
     globalDevice: c.VkDevice,
     graphicsQueue: c.VkQueue,
     presentQueue: c.VkQueue,
+    swapChainImages: []c.VkImage,
+    swapChain: c.VkSwapchainKHR,
+    swapChainImageFormat: c.VkFormat,
+    swapChainExtent: c.VkExtent2D,
 
     fn init(allocator: *std.mem.Allocator, entry: Entry) !Self {
         const extensions = try getExtensionNames(allocator);
@@ -177,6 +181,10 @@ const Vulkan = struct {
             .globalDevice = undefined,
             .graphicsQueue = undefined,
             .presentQueue = undefined,
+            .swapChainImages = undefined,
+            .swapChain = undefined,
+            .swapChainImageFormat = undefined,
+            .swapChainExtent = undefined,
         };
     }
 
@@ -429,6 +437,113 @@ const Vulkan = struct {
         GetDeviceQueue(self.globalDevice, indices.graphicsFamily.?, 0, &self.graphicsQueue);
         GetDeviceQueue(self.globalDevice, indices.presentFamily.?, 0, &self.presentQueue);
     }
+
+    fn chooseSwapSurfaceFormat(availableFormats: []c.VkSurfaceFormatKHR) c.VkSurfaceFormatKHR {
+        if (availableFormats.len == 1 and availableFormats[0].format == c.VK_FORMAT_UNDEFINED) {
+            return c.VkSurfaceFormatKHR{
+                .format = c.VK_FORMAT_B8G8R8A8_UNORM,
+                .colorSpace = c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+            };
+        }
+
+        for (availableFormats) |availableFormat| {
+            if (availableFormat.format == c.VK_FORMAT_B8G8R8A8_UNORM and
+                availableFormat.colorSpace == c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                return availableFormat;
+            }
+        }
+
+        return availableFormats[0];
+    }
+    fn chooseSwapPresentMode(availablePresentModes: []c.VkPresentModeKHR) c.VkPresentModeKHR {
+        var bestMode: c.VkPresentModeKHR = c.VK_PRESENT_MODE_FIFO_KHR;
+
+        for (availablePresentModes) |availablePresentMode| {
+            if (availablePresentMode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
+                return availablePresentMode;
+            } else if (availablePresentMode == c.VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                bestMode = availablePresentMode;
+            }
+        }
+
+        return bestMode;
+    }
+
+    fn chooseSwapExtent(capabilities: c.VkSurfaceCapabilitiesKHR, window: *Window) c.VkExtent2D {
+        if (capabilities.currentExtent.width != std.math.maxInt(u32)) {
+            return capabilities.currentExtent;
+        } else {
+            var actualExtent = c.VkExtent2D{
+                .width = @intCast(window.width),
+                .height = @intCast(window.height),
+            };
+
+            actualExtent.width = @max(capabilities.minImageExtent.width, @min(capabilities.maxImageExtent.width, actualExtent.width));
+            actualExtent.height = @max(capabilities.minImageExtent.height, @min(capabilities.maxImageExtent.height, actualExtent.height));
+
+            return actualExtent;
+        }
+    }
+
+    fn createSwapChain(self: *Self, allocator: *std.mem.Allocator, window: *Window) !void {
+        var swapChainSupport = try self.querySwapChainSupport(allocator, self.physicalDevice);
+        defer swapChainSupport.deinit();
+
+        const surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats.items);
+        const presentMode = chooseSwapPresentMode(swapChainSupport.presentModes.items);
+        const extent = chooseSwapExtent(swapChainSupport.capabilities, window);
+
+        var imageCount: u32 = swapChainSupport.capabilities.minImageCount + 1;
+        if (swapChainSupport.capabilities.maxImageCount > 0 and
+            imageCount > swapChainSupport.capabilities.maxImageCount)
+        {
+            imageCount = swapChainSupport.capabilities.maxImageCount;
+        }
+
+        const indices = try self.findQueueFamilies(allocator, self.physicalDevice);
+        const queueFamilyIndices = [_]u32{ indices.graphicsFamily.?, indices.presentFamily.? };
+
+        const different_families = indices.graphicsFamily.? != indices.presentFamily.?;
+
+        var createInfo = c.VkSwapchainCreateInfoKHR{
+            .sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface = self.surface,
+
+            .minImageCount = imageCount,
+            .imageFormat = surfaceFormat.format,
+            .imageColorSpace = surfaceFormat.colorSpace,
+            .imageExtent = extent,
+            .imageArrayLayers = 1,
+            .imageUsage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+
+            .imageSharingMode = if (different_families) c.VK_SHARING_MODE_CONCURRENT else c.VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = if (different_families) @as(u32, 2) else @as(u32, 0),
+            .pQueueFamilyIndices = if (different_families) &queueFamilyIndices else &([_]u32{ 0, 0 }),
+
+            .preTransform = swapChainSupport.capabilities.currentTransform,
+            .compositeAlpha = c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode = presentMode,
+            .clipped = c.VK_TRUE,
+
+            .oldSwapchain = null,
+
+            .pNext = null,
+            .flags = 0,
+        };
+
+        const CreateSwapchainKHR = try lookup(&self.entry.handle, "vkCreateSwapchainKHR");
+        const GetSwapchainImagesKHR = try lookup(&self.entry.handle, "vkGetSwapchainImagesKHR");
+
+        try checkSuccess(CreateSwapchainKHR(self.globalDevice, &createInfo, null, &self.swapChain));
+
+        try checkSuccess(GetSwapchainImagesKHR(self.globalDevice, self.swapChain, &imageCount, null));
+        self.swapChainImages = try allocator.alloc(c.VkImage, imageCount);
+        try checkSuccess(GetSwapchainImagesKHR(self.globalDevice, self.swapChain, &imageCount, self.swapChainImages.ptr));
+
+        self.swapChainImageFormat = surfaceFormat.format;
+        self.swapChainExtent = extent;
+    }
 };
 
 const CStrContext = struct {
@@ -454,15 +569,21 @@ const CStrContext = struct {
 const Window = struct {
     const Self = @This();
     instance: *c.GLFWwindow,
+    width: i32,
+    height: i32,
 
-    fn init() !Self {
+    fn init(width: i32, height: i32) !Self {
         if (c.glfwInit() == 0) return error.GlfwInitFailed;
 
         c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
         c.glfwWindowHint(c.GLFW_RESIZABLE, c.GLFW_FALSE);
 
-        const window = c.glfwCreateWindow(800, 600, "Vulkan", null, null) orelse return error.GlfwCreateWindowFailed;
-        return .{ .instance = window };
+        const window = c.glfwCreateWindow(width, height, "Vulkan", null, null) orelse return error.GlfwCreateWindowFailed;
+        return .{
+            .instance = window,
+            .width = width,
+            .height = height,
+        };
     }
 
     fn deinit(self: *Self) void {
@@ -495,7 +616,7 @@ const Loop = struct {
 pub fn main() !void {
     var allocator = std.heap.c_allocator;
 
-    var window = try Window.init();
+    var window = try Window.init(800, 600);
     defer window.deinit();
 
     var entry = try Entry.init();
@@ -507,6 +628,7 @@ pub fn main() !void {
     try vulkan.createSurface(&window);
     try vulkan.pickPhysicalDevice(&allocator);
     try vulkan.createLogicalDevice(&allocator);
+    try vulkan.createSwapChain(&allocator, &window);
 
     var loop = try Loop.init(&window);
     defer loop.deinit();
